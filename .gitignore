@@ -2,5 +2,9 @@
 *.pyc
 __pycache__
 experiments/results
-weights
-download_fsgan_models.py
+weights/
+data/
+inference/*.mp4
+inference/*.jpg
+docs/examples/
+docs/.jpg

@@ -34,6 +34,7 @@ from fsgan.datasets.seq_dataset import SeqInferenceDataset, SingleSeqRandomPairD
 from fsgan.datasets.appearance_map import AppearanceMapDataset
 from fsgan.utils.video_renderer import VideoRenderer
 from fsgan.utils.batch import main as batch
+import time
 
 
 parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -228,6 +229,7 @@ class FaceSwapping(VideoProcessBase):
 
     def __call__(self, source_path, target_path, output_path=None, select_source='longest', select_target='longest',
                  finetune=None):
+        start = time.time()
         is_vid = os.path.splitext(source_path)[1] == '.mp4'
         finetune = self.finetune_enabled and is_vid if finetune is None else finetune and is_vid
 
@@ -333,10 +335,14 @@ class FaceSwapping(VideoProcessBase):
 
             # Final result
             result_tensor = blend_tensor * soft_tgt_mask + tgt_frame * (1 - soft_tgt_mask)
+            # import pdb; pdb.set_trace()
+            src = os.path.basename(src_path_no_ext)
+            tar = os.path.basename(tgt_path_no_ext)
+            img_out_path = src + "_" + tar + ".jpg"
 
             # Write output
             if self.verbose == 0:
-                self.video_renderer.write(result_tensor)
+                self.video_renderer.write(img_out_path, result_tensor)
             elif self.verbose == 1:
                 curr_src_frames = [src_frame[0][:, i] for i in range(src_frame[0].shape[1])]
                 self.video_renderer.write(*curr_src_frames, result_tensor, tgt_frame)
@@ -358,11 +364,14 @@ class FaceSwapping(VideoProcessBase):
         # Finalize video and wait for the video writer to finish writing
         self.video_renderer.finalize()
         self.video_renderer.wait_until_finished()
+        stop = time.time()
+        print("---------- Processing time: {}".format(stop-start))
+        print("---------- Frame Processing time: {}".format((stop-start)/i))
 
 
 class FaceSwappingRenderer(VideoRenderer):
     def __init__(self, display=False, verbose=0, output_crop=False, resolution=256, crop_scale=1.2,
-                 encoder_codec='avc1', separate_process=False):
+                 encoder_codec='avc1', separate_process=False):  #avc1 mp4v
         self._appearance_map = None
         self._fig = None
         self._figsize = (24, 16)
@@ -502,3 +511,14 @@ def main(source, target, output=None, select_source=d('select_source'), select_t
 
 if __name__ == "__main__":
     main(**vars(parser.parse_args()))
+
+## export PYTHONPATH=$PYTHONPATH:/home/nhattruong/Project/FS
+## python face_swap_images2images.py /home/nhattruong/Project/FS/fsgan/docs/images -t /home/nhattruong/Project/FS/fsgan/docs/images -o /home/nhattruong/Project/FS/fsgan/docs/results -v 3
+## python face_swap_image2video.py /home/nhattruong/Project/FS/fsgan/docs/images/15.jpeg -t /home/nhattruong/Project/FS/fsgan/docs/examples/test_5.mp4 -o /home/nhattruong/Project/FS/fsgan/docs/out_video
+## python face_swap_video2video.py ../docs/examples/shinzo_abe.mp4 -t ../docs/examples/conan_obrien.mp4 -o .
+
+
+## set encoder_codec= 'mp4v',
+## set encoder_codec= 'mp4v',
+## python swap.py ../data/image/15.jpg -t ../docs/examples/conan_obrien.mp4 -o ../data/res_video/ -ec mp4v --finetune --finetune_save --seg_remove_mouth
+## python swap.py ../data/Archive/100.jpg -t ../data/video/test_short.mp4 -o ../data/res_video/  --finetune --finetune_save -ec mp4v --seg_remove_mouth

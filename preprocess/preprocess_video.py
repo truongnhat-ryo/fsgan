@@ -411,7 +411,10 @@ class VideoProcessBase(object):
                 for b in range(mask.shape[0]):
                     curr_mask = mask[b].cpu().numpy()
                     if self.seg_remove_mouth:
-                        curr_mask = remove_inner_mouth(curr_mask, landmarks[frame_count])
+                        try:
+                            curr_mask = remove_inner_mouth(curr_mask, landmarks[frame_count])
+                        except:
+                            pass
                         frame_count += 1
                     encoded_segmentations.append(encode_binary_mask(curr_mask))
 
@@ -443,6 +446,7 @@ class VideoProcessBase(object):
 
         # Face detection
         if not os.path.isfile(det_file_path):
+            # import pdb; pdb.set_trace()
             self.face_detector(input_path, det_file_path)
 
         # Detections to sequences

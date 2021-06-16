@@ -59,7 +59,7 @@ class VideoRenderer(mp.Process):
         else:
             self._init_task(in_vid_path, seq, out_vid_path, kwargs)
 
-    def write(self, *args):
+    def write(self, out_path, *args):
         """ Add tensors for rendering.
 
         Args:
@@ -68,7 +68,7 @@ class VideoRenderer(mp.Process):
         if self._separate_process:
             self._input_queue.put([a.cpu() for a in args])
         else:
-            self._write_batch([a.cpu() for a in args])
+            self._write_batch([a.cpu() for a in args], out_path)
 
     def finalize(self):
         if self._separate_process:
@@ -127,10 +127,12 @@ class VideoRenderer(mp.Process):
             # Write a batch of frames
             self._write_batch(task)
 
-    def _render(self, render_bgr, full_frame_bgr=None, bbox=None):
+    def _render(self, render_bgr, full_frame_bgr=None, bbox=None, out_path=None):
         if self._verbose == 0 and not self._output_crop and full_frame_bgr is not None:
             render_bgr = crop2img(full_frame_bgr, render_bgr, bbox)
-        if self._out_vid is not None:
+            # cv2.imwrite(out_path, render_bgr)  #cmt this line for video rendering
+            # import pdb; pdb.set_trace()
+        if self._out_vid is not None:   #uncmt for video rendering
             self._out_vid.write(render_bgr)
         if self._display:
             cv2.imshow('render', render_bgr)
@@ -172,10 +174,10 @@ class VideoRenderer(mp.Process):
                 # Read frame
                 ret, frame_bgr = self._in_vid.read()
                 assert frame_bgr is not None, f'Failed to read frame {i} from input video: "{self._in_vid_path}"'
-                self._render(frame_bgr)
+                self._render(frame_bgr) #uncmt for video rendering
                 self._frame_count += 1
 
-    def _write_batch(self, tensors):
+    def _write_batch(self, tensors, out_path):
         batch_size = tensors[0].shape[0]
 
         # For each frame in the current batch of tensors
@@ -194,7 +196,7 @@ class VideoRenderer(mp.Process):
                 bbox = scale_bbox(bbox, self._crop_scale)
 
             render_bgr = self.on_render(*[t[b] for t in tensors])
-            self._render(render_bgr, full_frame_bgr, bbox)
+            self._render(render_bgr, full_frame_bgr, bbox, out_path)
             self._frame_count += 1
             # print(f'Debug: Wrote frame: {self._frame_count}')
 
@@ -204,7 +206,7 @@ class VideoRenderer(mp.Process):
                 # Read frame
                 ret, frame_bgr = self._in_vid.read()
                 assert frame_bgr is not None, f'Failed to read frame {i} from input video: "{self._in_vid_path}"'
-                self._render(frame_bgr)
+                self._render(frame_bgr) #uncmt for video rendering
                 self._frame_count += 1
                 # print(f'Debug: Wrote frame: {self._frame_count}')
 
