@@ -2,4 +2,9 @@
 *.pyc
 __pycache__
 experiments/results
-weights
+weights/
+data/
+inference/*.mp4
+inference/*.jpg
+docs/examples/
+docs/.jpg
