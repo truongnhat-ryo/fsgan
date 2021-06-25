@@ -288,9 +288,10 @@ class FaceReenactment(VideoProcessBase):
             # Barycentric interpolation of reenacted frames
             reenactment_tensor = (reenactment_tensor * bw.view(*bw.shape, 1, 1, 1)).sum(dim=1)
 
+            temp_path = "abc"
             # Write output
             if self.verbose == 0:
-                self.video_renderer.write(reenactment_tensor)
+                self.video_renderer.write(temp_path, reenactment_tensor)
             elif self.verbose == 1:
                 self.video_renderer.write(src_frame[0][:, 0], src_frame[0][:, 1], src_frame[0][:, 2],
                                           reenactment_tensor, tgt_frame)
