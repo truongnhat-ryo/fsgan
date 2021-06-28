@@ -233,135 +233,124 @@ class FaceSwapping(VideoProcessBase):
         start = time.time()
         is_vid = os.path.splitext(source_path)[1] == '.mp4'
         finetune = self.finetune_enabled and is_vid if finetune is None else finetune and is_vid
-        import glob
 
-        src_folder = "/home/nhattruong/Project/FS/fsgan/data/image"
-        tar_folder = "/home/nhattruong/Project/FS/fsgan/data/image"
-        src_paths = glob.glob(src_folder + "/*.jpg")
-        tar_paths = glob.glob(tar_folder + "/*.jpg")
-        ab = 0
-        for source_path in src_paths:
-            for target_path in tar_paths:
-                ab += 1
-                # Validation
-                assert os.path.isfile(source_path), 'Source path "%s" does not exist' % source_path
-                assert os.path.isfile(target_path), 'Target path "%s" does not exist' % target_path
+        # Validation
+        assert os.path.isfile(source_path), 'Source path "%s" does not exist' % source_path
+        assert os.path.isfile(target_path), 'Target path "%s" does not exist' % target_path
 
-                # Cache input
-                source_cache_dir, source_seq_file_path, _ = self.cache(source_path)
-                target_cache_dir, target_seq_file_path, _ = self.cache(target_path)
+        # Cache input
+        source_cache_dir, source_seq_file_path, _ = self.cache(source_path)
+        target_cache_dir, target_seq_file_path, _ = self.cache(target_path)
 
-                # Load sequences from file
-                with open(source_seq_file_path, "rb") as fp:  # Unpickling
-                    source_seq_list = pickle.load(fp)
-                with open(target_seq_file_path, "rb") as fp:  # Unpickling
-                    target_seq_list = pickle.load(fp)
+        # Load sequences from file
+        with open(source_seq_file_path, "rb") as fp:  # Unpickling
+            source_seq_list = pickle.load(fp)
+        with open(target_seq_file_path, "rb") as fp:  # Unpickling
+            target_seq_list = pickle.load(fp)
 
-                # Select source and target sequence
-                source_seq = select_seq(source_seq_list, select_source)
-                target_seq = select_seq(target_seq_list, select_target)
+        # Select source and target sequence
+        source_seq = select_seq(source_seq_list, select_source)
+        target_seq = select_seq(target_seq_list, select_target)
 
-                # Set source and target sequence videos paths
-                src_path_no_ext, src_ext = os.path.splitext(source_path)
-                src_vid_seq_name = os.path.basename(src_path_no_ext) + '_seq%02d%s' % (source_seq.id, src_ext)
-                src_vid_seq_path = os.path.join(source_cache_dir, src_vid_seq_name)
-                tgt_path_no_ext, tgt_ext = os.path.splitext(target_path)
-                tgt_vid_seq_name = os.path.basename(tgt_path_no_ext) + '_seq%02d%s' % (target_seq.id, tgt_ext)
-                tgt_vid_seq_path = os.path.join(target_cache_dir, tgt_vid_seq_name)
+        # Set source and target sequence videos paths
+        src_path_no_ext, src_ext = os.path.splitext(source_path)
+        src_vid_seq_name = os.path.basename(src_path_no_ext) + '_seq%02d%s' % (source_seq.id, src_ext)
+        src_vid_seq_path = os.path.join(source_cache_dir, src_vid_seq_name)
+        tgt_path_no_ext, tgt_ext = os.path.splitext(target_path)
+        tgt_vid_seq_name = os.path.basename(tgt_path_no_ext) + '_seq%02d%s' % (target_seq.id, tgt_ext)
+        tgt_vid_seq_path = os.path.join(target_cache_dir, tgt_vid_seq_name)
 
-                # Set output path
-                if (output_path is not None) and (not self.img2img):  # swap face in video. if img to img then output_path is *.jpg, else output_path is directory
-                    if os.path.isdir(output_path):
-                        output_filename = f'{os.path.basename(src_path_no_ext)}_{os.path.basename(tgt_path_no_ext)}.mp4'
-                        output_path = os.path.join(output_path, output_filename)
+        # Set output path
+        if (output_path is not None) and (not self.img2img):  # swap face in video. if img to img then output_path is *.jpg, else output_path is directory
+            if os.path.isdir(output_path):
+                output_filename = f'{os.path.basename(src_path_no_ext)}_{os.path.basename(tgt_path_no_ext)}.mp4'
+                output_path = os.path.join(output_path, output_filename)
 
-                # Initialize appearance map
-                src_transform = img_lms_pose_transforms.Compose([Rotate(), Pyramids(2), ToTensor(), Normalize()])
-                tgt_transform = img_lms_pose_transforms.Compose([ToTensor(), Normalize()])
-                appearance_map = AppearanceMapDataset(src_vid_seq_path, tgt_vid_seq_path, src_transform, tgt_transform,
-                                                    self.landmarks_postfix, self.pose_postfix, self.segmentation_postfix,
-                                                    self.min_radius)
-                appearance_map_loader = DataLoader(appearance_map, batch_size=self.batch_size, num_workers=1, pin_memory=True,
-                                                drop_last=False, shuffle=False)
+        # Initialize appearance map
+        src_transform = img_lms_pose_transforms.Compose([Rotate(), Pyramids(2), ToTensor(), Normalize()])
+        tgt_transform = img_lms_pose_transforms.Compose([ToTensor(), Normalize()])
+        appearance_map = AppearanceMapDataset(src_vid_seq_path, tgt_vid_seq_path, src_transform, tgt_transform,
+                                            self.landmarks_postfix, self.pose_postfix, self.segmentation_postfix,
+                                            self.min_radius)
+        appearance_map_loader = DataLoader(appearance_map, batch_size=self.batch_size, num_workers=1, pin_memory=True,
+                                        drop_last=False, shuffle=False)
 
-                # Initialize video writer
-                self.video_renderer.init(target_path, target_seq, output_path, _appearance_map=appearance_map)
+        # Initialize video writer
+        self.video_renderer.init(target_path, target_seq, output_path, _appearance_map=appearance_map)
 
-                # Finetune reenactment model on source sequences
-                if finetune:
-                    self.finetune(src_vid_seq_path, self.finetune_save)
+        # Finetune reenactment model on source sequences
+        if finetune:
+            self.finetune(src_vid_seq_path, self.finetune_save)
 
-                print(f'=> Face swapping: "{src_vid_seq_name}" -> "{tgt_vid_seq_name}"...')
+        print(f'=> Face swapping: "{src_vid_seq_name}" -> "{tgt_vid_seq_name}"...')
 
-                # For each batch of frames in the target video
-                for i, (src_frame, src_landmarks, src_poses, bw, tgt_frame, tgt_landmarks, tgt_pose, tgt_mask) \
-                        in enumerate(tqdm(appearance_map_loader, unit='batches', file=sys.stdout)):
-                    # Prepare input
-                    for p in range(len(src_frame)):
-                        src_frame[p] = src_frame[p].to(self.device)
-                    tgt_frame = tgt_frame.to(self.device)
-                    tgt_landmarks = tgt_landmarks.to(self.device)
-                    # tgt_mask = tgt_mask.unsqueeze(1).to(self.device)
-                    tgt_mask = tgt_mask.unsqueeze(1).int().to(self.device).bool()   # TODO: check if the boolean tensor bug is fixed
-                    bw = bw.to(self.device)
-                    bw_indices = torch.nonzero(torch.any(bw > 0, dim=0), as_tuple=True)[0]
-                    bw = bw[:, bw_indices]
+        # For each batch of frames in the target video
+        for i, (src_frame, src_landmarks, src_poses, bw, tgt_frame, tgt_landmarks, tgt_pose, tgt_mask) \
+                in enumerate(tqdm(appearance_map_loader, unit='batches', file=sys.stdout)):
+            # Prepare input
+            for p in range(len(src_frame)):
+                src_frame[p] = src_frame[p].to(self.device)
+            tgt_frame = tgt_frame.to(self.device)
+            tgt_landmarks = tgt_landmarks.to(self.device)
+            # tgt_mask = tgt_mask.unsqueeze(1).to(self.device)
+            tgt_mask = tgt_mask.unsqueeze(1).int().to(self.device).bool()   # TODO: check if the boolean tensor bug is fixed
+            bw = bw.to(self.device)
+            bw_indices = torch.nonzero(torch.any(bw > 0, dim=0), as_tuple=True)[0]
+            bw = bw[:, bw_indices]
 
-                    # For each source frame perform reenactment
-                    reenactment_triplet = []
-                    for j in bw_indices:
-                        input = []
-                        for p in range(len(src_frame)):
-                            context = self.landmarks_decoders[p](tgt_landmarks)
-                            input.append(torch.cat((src_frame[p][:, j], context), dim=1))
+            # For each source frame perform reenactment
+            reenactment_triplet = []
+            for j in bw_indices:
+                input = []
+                for p in range(len(src_frame)):
+                    context = self.landmarks_decoders[p](tgt_landmarks)
+                    input.append(torch.cat((src_frame[p][:, j], context), dim=1))
 
-                        # Reenactment
-                        reenactment_triplet.append(self.Gr(input).unsqueeze(1))
-                    reenactment_tensor = torch.cat(reenactment_triplet, dim=1)
+                # Reenactment
+                reenactment_triplet.append(self.Gr(input).unsqueeze(1))
+            reenactment_tensor = torch.cat(reenactment_triplet, dim=1)
 
-                    # Barycentric interpolation of reenacted frames
-                    reenactment_tensor = (reenactment_tensor * bw.view(*bw.shape, 1, 1, 1)).sum(dim=1)
+            # Barycentric interpolation of reenacted frames
+            reenactment_tensor = (reenactment_tensor * bw.view(*bw.shape, 1, 1, 1)).sum(dim=1)
 
-                    # Compute reenactment segmentation
-                    reenactment_seg = self.S(reenactment_tensor)
-                    reenactment_background_mask_tensor = (reenactment_seg.argmax(1) != 1).unsqueeze(1)
+            # Compute reenactment segmentation
+            reenactment_seg = self.S(reenactment_tensor)
+            reenactment_background_mask_tensor = (reenactment_seg.argmax(1) != 1).unsqueeze(1)
 
-                    # Remove the background of the aligned face
-                    reenactment_tensor.masked_fill_(reenactment_background_mask_tensor, -1.0)
+            # Remove the background of the aligned face
+            reenactment_tensor.masked_fill_(reenactment_background_mask_tensor, -1.0)
 
-                    # Soften target mask
-                    soft_tgt_mask, eroded_tgt_mask = self.smooth_mask(tgt_mask)
+            # Soften target mask
+            soft_tgt_mask, eroded_tgt_mask = self.smooth_mask(tgt_mask)
 
-                    # Complete face
-                    inpainting_input_tensor = torch.cat((reenactment_tensor, eroded_tgt_mask.float()), dim=1)
-                    inpainting_input_tensor_pyd = create_pyramid(inpainting_input_tensor, 2)
-                    completion_tensor = self.Gc(inpainting_input_tensor_pyd)
+            # Complete face
+            inpainting_input_tensor = torch.cat((reenactment_tensor, eroded_tgt_mask.float()), dim=1)
+            inpainting_input_tensor_pyd = create_pyramid(inpainting_input_tensor, 2)
+            completion_tensor = self.Gc(inpainting_input_tensor_pyd)
 
-                    # Blend faces
-                    transfer_tensor = transfer_mask(completion_tensor, tgt_frame, eroded_tgt_mask)
-                    blend_input_tensor = torch.cat((transfer_tensor, tgt_frame, eroded_tgt_mask.float()), dim=1)
-                    blend_input_tensor_pyd = create_pyramid(blend_input_tensor, 2)
-                    blend_tensor = self.Gb(blend_input_tensor_pyd)
+            # Blend faces
+            transfer_tensor = transfer_mask(completion_tensor, tgt_frame, eroded_tgt_mask)
+            blend_input_tensor = torch.cat((transfer_tensor, tgt_frame, eroded_tgt_mask.float()), dim=1)
+            blend_input_tensor_pyd = create_pyramid(blend_input_tensor, 2)
+            blend_tensor = self.Gb(blend_input_tensor_pyd)
 
-                    # Final result
-                    result_tensor = blend_tensor * soft_tgt_mask + tgt_frame * (1 - soft_tgt_mask)
+            # Final result
+            result_tensor = blend_tensor * soft_tgt_mask + tgt_frame * (1 - soft_tgt_mask)
 
-                    output_path = os.path.join("/home/nhattruong/Project/FS/fsgan/data/temp", str(ab) + ".jpg")
-                    # Write output
-                    if self.verbose == 0:
-                        self.video_renderer.write(output_path, result_tensor)
-                    elif self.verbose == 1:
-                        curr_src_frames = [src_frame[0][:, i] for i in range(src_frame[0].shape[1])]
-                        self.video_renderer.write(*curr_src_frames, result_tensor, tgt_frame)
-                    else:
-                        curr_src_frames = [src_frame[0][:, i] for i in range(src_frame[0].shape[1])]
-                        tgt_seg_blend = blend_seg_label(tgt_frame, tgt_mask.squeeze(1))
-                        soft_tgt_mask = soft_tgt_mask.mul(2.).sub(1.).repeat(1, 3, 1, 1)
-                        self.video_renderer.write(*curr_src_frames, result_tensor, tgt_frame, reenactment_tensor,
-                                                completion_tensor, transfer_tensor, soft_tgt_mask, tgt_seg_blend,
-                                                tgt_pose)
-                if ab>1:
-                    break
+            output_path = os.path.join("/home/nhattruong/Project/FS/fsgan/data/temp", str(ab) + ".jpg")
+            # Write output
+            if self.verbose == 0:
+                self.video_renderer.write(output_path, result_tensor)
+            elif self.verbose == 1:
+                curr_src_frames = [src_frame[0][:, i] for i in range(src_frame[0].shape[1])]
+                self.video_renderer.write(*curr_src_frames, result_tensor, tgt_frame)
+            else:
+                curr_src_frames = [src_frame[0][:, i] for i in range(src_frame[0].shape[1])]
+                tgt_seg_blend = blend_seg_label(tgt_frame, tgt_mask.squeeze(1))
+                soft_tgt_mask = soft_tgt_mask.mul(2.).sub(1.).repeat(1, 3, 1, 1)
+                self.video_renderer.write(*curr_src_frames, result_tensor, tgt_frame, reenactment_tensor,
+                                        completion_tensor, transfer_tensor, soft_tgt_mask, tgt_seg_blend,
+                                        tgt_pose)
 
         # Load original reenactment weights
         if finetune:
