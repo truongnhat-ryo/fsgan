@@ -3,8 +3,77 @@ import cv2
 import torch
 import torch.multiprocessing as mp
 from fsgan.utils.img_utils import tensor2bgr
-from fsgan.utils.bbox_utils import crop2img, scale_bbox
+from fsgan.utils.bbox_utils import crop2img, scale_bbox, crop2img_smooth_version
 
+from fsgan.face_enhance.retinaface.retinaface_detection import RetinaFaceDetection
+from fsgan.face_enhance.face_model.face_gan import FaceGAN
+from fsgan.face_enhance.align_faces import warp_and_crop_face, get_reference_facial_points
+from skimage import transform as tf
+
+class FaceEnhancement(object):
+    def __init__(self, base_dir='/home/nhattruong/Project/FS/fsgan/face_enhance', size=512, model=None, channel_multiplier=2):
+        self.facedetector = RetinaFaceDetection(base_dir)
+        self.facegan = FaceGAN(base_dir, size, model, channel_multiplier)
+        self.size = size
+        self.threshold = 0.9
+
+        # the mask for pasting restored faces back
+        self.mask = np.zeros((512, 512), np.float32)
+        cv2.rectangle(self.mask, (26, 26), (486, 486), (1, 1, 1), -1, cv2.LINE_AA)
+        self.mask = cv2.GaussianBlur(self.mask, (101, 101), 11)
+        self.mask = cv2.GaussianBlur(self.mask, (101, 101), 11)
+
+        self.kernel = np.array((
+                [0.0625, 0.125, 0.0625],
+                [0.125, 0.25, 0.125],
+                [0.0625, 0.125, 0.0625]), dtype="float32")
+
+        # get the reference 5 landmarks position in the crop settings
+        default_square = True
+        inner_padding_factor = 0.25
+        outer_padding = (0, 0)
+        self.reference_5pts = get_reference_facial_points(
+                (self.size, self.size), inner_padding_factor, outer_padding, default_square)
+
+    def process(self, img):
+        facebs, landms = self.facedetector.detect(img)
+        
+        orig_faces, enhanced_faces = [], []
+        height, width = img.shape[:2]
+        full_mask = np.zeros((height, width), dtype=np.float32)
+        full_img = np.zeros(img.shape, dtype=np.uint8)
+
+        for i, (faceb, facial5points) in enumerate(zip(facebs, landms)):
+            if faceb[4]<self.threshold: continue
+            fh, fw = (faceb[3]-faceb[1]), (faceb[2]-faceb[0])
+
+            facial5points = np.reshape(facial5points, (2, 5))
+
+            of, tfm_inv = warp_and_crop_face(img, facial5points, reference_pts=self.reference_5pts, crop_size=(self.size, self.size))
+            
+            # enhance the face
+            ef = self.facegan.process(of)
+            
+            orig_faces.append(of)
+            enhanced_faces.append(ef)
+            
+            tmp_mask = self.mask
+            tmp_mask = cv2.resize(tmp_mask, ef.shape[:2])
+            tmp_mask = cv2.warpAffine(tmp_mask, tfm_inv, (width, height), flags=3)
+
+            if min(fh, fw)<100: # gaussian filter for small faces
+                ef = cv2.filter2D(ef, -1, self.kernel)
+            
+            tmp_img = cv2.warpAffine(ef, tfm_inv, (width, height), flags=3)
+
+            mask = tmp_mask - full_mask
+            full_mask[np.where(mask>0)] = tmp_mask[np.where(mask>0)]
+            full_img[np.where(mask>0)] = tmp_img[np.where(mask>0)]
+
+        full_mask = full_mask[:, :, np.newaxis]
+        img = cv2.convertScaleAbs(img*(1-full_mask) + full_img*full_mask)
+
+        return img, orig_faces, enhanced_faces
 
 class VideoRenderer(mp.Process):
     """ Renders input video frames to both screen and video file.
@@ -24,7 +93,7 @@ class VideoRenderer(mp.Process):
         separate_process (bool): If True, the renderer will be run in a separate process
     """
     def __init__(self, display=False, verbose=0, verbose_size=None, output_crop=False, resolution=256, crop_scale=1.2,
-                 encoder_codec='avc1', separate_process=False):
+                 encoder_codec='avc1', separate_process=False, img2img=True):
         super(VideoRenderer, self).__init__()
         self._display = display
         self._verbose = verbose
@@ -43,6 +112,9 @@ class VideoRenderer(mp.Process):
         self._in_vid_path = None
         self._total_frames = None
         self._frame_count = 0
+        self.img2img = img2img
+
+        self.faceenhancer = FaceEnhancement(size=512, model='GPEN-512', channel_multiplier=2)
 
     def init(self, in_vid_path, seq, out_vid_path=None, **kwargs):
         """ Initialize the video render for a new video rendering job.
@@ -129,10 +201,12 @@ class VideoRenderer(mp.Process):
 
     def _render(self, render_bgr, full_frame_bgr=None, bbox=None, out_path=None):
         if self._verbose == 0 and not self._output_crop and full_frame_bgr is not None:
-            render_bgr = crop2img(full_frame_bgr, render_bgr, bbox)
-            # cv2.imwrite(out_path, render_bgr)  #cmt this line for video rendering
             # import pdb; pdb.set_trace()
-        if self._out_vid is not None:   #uncmt for video rendering
+            render_bgr, orig_faces, enhanced_faces = self.faceenhancer.process(render_bgr)
+            render_bgr = crop2img_smooth_version(full_frame_bgr, render_bgr, bbox)
+            if self.img2img:
+                cv2.imwrite(out_path, render_bgr)
+        if self._out_vid is not None:
             self._out_vid.write(render_bgr)
         if self._display:
             cv2.imshow('render', render_bgr)
@@ -166,7 +240,8 @@ class VideoRenderer(mp.Process):
                 out_size = (self._resolution, self._resolution)
             elif self._verbose_size is not None:
                 out_size = self._verbose_size
-            self._out_vid = cv2.VideoWriter(out_vid_path, self._fourcc, fps, out_size)
+            if not self.img2img:
+                self._out_vid = cv2.VideoWriter(out_vid_path, self._fourcc, fps, out_size)
 
         # Write frames as they are until the start of the sequence
         if self._verbose == 0:
@@ -213,7 +288,7 @@ class VideoRenderer(mp.Process):
         # if self._frame_count >= self._total_frames:
         # Clean up
         self._in_vid.release()
-        self._out_vid.release()
+        # self._out_vid.release() # uncmt for video writer
         self._in_vid = None
         self._out_vid = None
         self._seq = None

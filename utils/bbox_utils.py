@@ -297,3 +297,59 @@ def smooth_bboxes(detections, center_kernel=25, size_kernel=51, max_motion=0.01)
     bboxes = np.concatenate((centers_smoothed - sizes, centers_smoothed + sizes), axis=1)
 
     return bboxes
+
+def erosion(image, kernel_size, iterations=1):
+    kernel = np.ones((kernel_size,kernel_size), np.uint8)  
+    img_erosion = cv2.erode(image, kernel, iterations=1)
+    return img_erosion
+
+def dilation(image, kernel_size, iterations=1):
+    kernel = np.ones((kernel_size,kernel_size), np.uint8)  
+    img_dilation = cv2.dilate(image, kernel, iterations=1)
+    return img_dilation
+
+def crop2img_smooth_version(img, crop, bbox):
+    """ Writes cropped image into another image corresponding to the specified bounding box.
+
+    Args:
+        img (np.array): The image to write into of shape (H, W, 3)
+        crop (np.array): The cropped image of shape (H, W, 3)
+        bbox (np.array): Bounding box in the format [left, top, width, height]
+
+    Returns:
+        np.array: Result image.
+    """
+    scaled_bbox = bbox
+    scaled_crop = cv2.resize(crop, (scaled_bbox[3], scaled_bbox[2]), interpolation=cv2.INTER_CUBIC)
+    left = -scaled_bbox[0] if scaled_bbox[0] < 0 else 0
+    top = -scaled_bbox[1] if scaled_bbox[1] < 0 else 0
+    right = scaled_bbox[0] + scaled_bbox[2] - img.shape[1] if (scaled_bbox[0] + scaled_bbox[2] - img.shape[1]) > 0 else 0
+    bottom = scaled_bbox[1] + scaled_bbox[3] - img.shape[0] if (scaled_bbox[1] + scaled_bbox[3] - img.shape[0]) > 0 else 0
+    crop_bbox = np.array([left, top, scaled_bbox[2] - left - right, scaled_bbox[3] - top - bottom])
+    scaled_bbox += np.array([left, top, -left - right, -top - bottom])
+
+    out_img = img.copy()
+    t,b,l,r = scaled_bbox[1], scaled_bbox[1] + scaled_bbox[3], scaled_bbox[0], scaled_bbox[0] + scaled_bbox[2]
+    out_img = blend_image(scaled_crop, out_img, t,b,l,r)
+    return out_img
+
+def blend_image(face_result, full_result, t,b,l,r):
+    face_result_f = (face_result.astype("float32"))/255
+    full_result_f = (full_result.astype("float32"))/255
+    
+    fore_grd_f = np.zeros_like(full_result_f)
+    fore_grd_f[t:b,l:r] = face_result_f
+    back_grd_f = full_result_f.copy()
+
+    small_mask_f = np.ones_like(face_result_f)
+    mask_f = np.zeros_like(full_result_f)
+    mask_f[t:b, l:r] = small_mask_f
+    mask_f = erosion(mask_f, 35, 2)
+    mask_f = cv2.GaussianBlur(mask_f, (29,29), 0)
+    mask_f = cv2.GaussianBlur(mask_f, (35,35), 0)
+    
+    fore_grd_f = cv2.multiply(mask_f, fore_grd_f)
+    back_grd_f = cv2.multiply(np.ones_like(mask_f) - mask_f, back_grd_f)
+    added_result = cv2.add(fore_grd_f, back_grd_f)
+    added_result = (added_result*255).astype("uint8")
+    return added_result

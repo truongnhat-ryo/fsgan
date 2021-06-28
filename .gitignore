@@ -8,3 +8,4 @@ inference/*.mp4
 inference/*.jpg
 docs/examples/
 docs/.jpg
+face_enhance/weights
